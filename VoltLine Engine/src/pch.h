@@ -10,7 +10,11 @@
 // -- IO Type Headers -- //
 
 #include "fast_io.h"
+#include "fast_io_device.h"
+
 #include "spdlog/spdlog.h"
+#include "spdlog/sinks/stdout_color_sinks.h"
+#include "spdlog/sinks/basic_file_sink.h"
 
 // -- External Util Headers -- //
 
@@ -19,6 +23,7 @@
 // ----- Internal Includes ----- //
 
 #include <iostream>
+#include <cstring>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -29,6 +34,8 @@
 #include <chrono>
 #include <thread>
 #include <string_view>
+#include <filesystem>
+#include <cstdlib>
 
 // ----- Using ----- //
 

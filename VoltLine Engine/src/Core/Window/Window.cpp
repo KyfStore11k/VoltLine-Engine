@@ -5,10 +5,82 @@
 
 #include "Core/Managers/KeyBindingManager/KeyBindingManager.h"
 #include "Core/Managers/ItemManager/ItemManager.h"
+#include "Core/Managers/DirectoryManager/DirectoryManager.h"
 
 using InputCallback = std::function<void()>;
 
 static bool canFocusOnSidePanelWindow = true;
+
+static bool fileExists(const string& filename)
+{
+    std::ifstream file(filename);
+    return file.good();
+}
+
+static string getFileContents(const char* filePath) {
+    std::ifstream file(filePath);
+
+    if (!file.is_open()) {
+        throw std::runtime_error("Could not open file: " + string(filePath));
+    }
+
+    string contents;
+    string line;
+
+    while (std::getline(file, line)) {
+        contents += line + '\n';
+    }
+
+    file.close();
+
+    return contents;
+
+}
+
+std::string getLogFilePath() {
+    static json j;
+    static string hubSettingsPath = "bin/" + string(CURRENT_PLAT) + "-" + string(CURRENT_CONF) + "/VoltLine Engine/hub_settings.json";
+    static string jsonText;
+
+    if (fileExists("hub_settings.json")) {
+        jsonText = getFileContents("hub_settings.json");
+    }
+    else {
+        jsonText = getFileContents(hubSettingsPath.c_str());
+    }
+
+    try {
+        j = json::parse(jsonText);
+    }
+    catch (const std::exception& e) {
+        j = json();
+    }
+
+    return j["engine_settings"]["engine_log_file_dir"];
+}
+
+namespace cf_Sink {
+    std::shared_ptr<spdlog::logger> setupLogger() {
+        // Get the log file path
+        std::string logFilePath = getLogFilePath();
+
+        // Create the sinks
+        auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+        auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(logFilePath, true);
+
+        // Create the logger
+        std::vector<spdlog::sink_ptr> sinks = { console_sink, file_sink };
+        auto logger = std::make_shared<spdlog::logger>("multi_sink_logger", sinks.begin(), sinks.end());
+
+        // Set log level, etc.
+        logger->set_level(spdlog::level::info);
+
+        return logger;
+    }
+
+    // Static logger that is initialized using setupLogger
+    static std::shared_ptr<spdlog::logger> logger = setupLogger();
+}
 
 namespace Window {
 
@@ -21,7 +93,7 @@ namespace Window {
         int width, height, nrChannels;
         unsigned char* data = stbi_load(filename, &width, &height, &nrChannels, 0);
         if (!data) {
-            spdlog::error(std::format("Failed to load texture: {}", filename));
+            cf_Sink::logger->error(std::format("Failed to load texture: {}", filename));
             return 0;
         }
 
@@ -33,7 +105,7 @@ namespace Window {
         else if (nrChannels == 4)
             format = GL_RGBA;
         else {
-            spdlog::error(std::format("Unsupported image format: {}", filename));
+            cf_Sink::logger->error(std::format("Unsupported image format: {}", filename));
             stbi_image_free(data);
             return 0;
         }
@@ -53,26 +125,6 @@ namespace Window {
         return textureID;
     }
 
-    static string getFileContents(const char* filePath) {
-        std::ifstream file(filePath);
-
-        if (!file.is_open()) {
-            throw std::runtime_error("Could not open file: " + string(filePath));
-        }
-
-        string contents;
-        string line;
-
-        while (std::getline(file, line)) {
-            contents += line + '\n';
-        }
-
-        file.close();
-
-        return contents;
-
-    }
-
     static void saveFileContents(const char* str, const char* filePath) {
         std::ofstream file(filePath, std::ios::out | std::ios::trunc);
 
@@ -87,18 +139,12 @@ namespace Window {
         }
     }
 
-    static bool fileExists(const string& filename)
-    {
-        std::ifstream file(filename);
-        return file.good();
-    }
-
     bool setWindowIcon(GLFWwindow* window, const char* iconPath) {
         int width, height, channels;
         unsigned char* image = stbi_load(iconPath, &width, &height, &channels, 4);
 
         if (!image) {
-            spdlog::error(std::format("Failed to load icon file: {}'.", iconPath));
+            cf_Sink::logger->error(std::format("Failed to load icon file: {}'.", iconPath));
             return false;
         }
 
@@ -201,7 +247,10 @@ namespace Window {
 
     int Window::Init() {
 
-        spdlog::set_pattern("%+");
+        cf_Sink::logger->flush_on(spdlog::level::info);
+        spdlog::set_level(spdlog::level::info);
+
+        cf_Sink::logger->set_pattern("%+");
 
         if (!glfwInit()) {
             std::cerr << "Failed to initialize GLFW" << std::endl;
@@ -215,7 +264,7 @@ namespace Window {
         applicationWindow = glfwCreateWindow(windowW, windowH, windowTitle.c_str(), NULL, NULL);
 
         if (!applicationWindow) {
-            spdlog::error("Failed to create GLFW window");
+            cf_Sink::logger->error("Failed to create GLFW window");
             glfwTerminate();
             return -1;
         }
@@ -293,7 +342,7 @@ namespace Window {
         ImGui_ImplOpenGL3_Init("#version 420");
 
         if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
-            spdlog::error("Failed to initialize GLAD");
+            cf_Sink::logger->error("Failed to initialize GLAD");
             return -1;
         }
 
@@ -424,11 +473,11 @@ namespace Window {
                     {
                         if (!std::string_view(value["project_file"].dump()).ends_with(R"(.voltproj")"))
                         {
-                            spdlog::error(std::format("{}: is not a valid VoltLine project type. (etc., .voltproj)", value["project_file"].dump()).c_str());
+                            cf_Sink::logger->error(std::format("{}: is not a valid VoltLine project type. (etc., .voltproj)", value["project_file"].dump()).c_str());
                             throw std::runtime_error("Invalid VoltLine Project Type");
                         }
 
-                        spdlog::info(std::format("Opening Project: {}", value["project_file"].dump()));
+                        cf_Sink::logger->info(std::format("Opening Project: {}", value["project_file"].dump()));
 
                         ImGui::SetWindowFocus("VoltLine Side Panel");
                     }
@@ -438,7 +487,18 @@ namespace Window {
         }
         else if (screen == "new_project")
         {
+
             static char projectName[64] = "New Project";
+            auto defaultProjectPath = DirectoryManager::getUserDocumentsPath({"Documents", "VoltLine Projects", projectName});
+
+            std::string defaultProjectPathStr = defaultProjectPath.string();
+
+            static char projectLocation[128] = "";
+
+            errno_t err = strncpy_s(projectLocation, sizeof(projectLocation), defaultProjectPathStr.c_str(), defaultProjectPathStr.size());
+            if (err != 0) {
+                throw std::runtime_error("Error copying defaultProjectPath.string() into projectLocation.");
+            }
 
             ImGui::SetCursorPos(ImVec2(220, 20));
 
@@ -476,7 +536,55 @@ namespace Window {
             ItemManager::OnImGuiItemDeselected([]() {
                 canFocusOnSidePanelWindow = true;
                 });
+
+            ImGui::SetCursorPos(ImVec2(220, 460));
+
+            ImGui::Text("Project Location: ");
+
+            ImGui::SetCursorPos(ImVec2(390, 460));
+            ImGui::PushItemWidth(750);
+            ImGui::InputText("##ProjectLocation", projectLocation, IM_ARRAYSIZE(projectLocation));
+            ImGui::PopItemWidth();
+
+            ItemManager::OnImGuiItemClicked([]() {
+                canFocusOnSidePanelWindow = false;
+                });
+
+            ItemManager::OnImGuiItemDeselected([]() {
+                canFocusOnSidePanelWindow = true;
+                });
             
+            ImGui::PopFont();
+
+            ImGui::SetCursorPos(ImVec2(220, 520));
+
+            ImGui::PushFont(SubHeaderFont);
+            if (ImGui::Button("Create Project", ImVec2(300, 50)))
+            {
+                static json j;
+                hubSettingsPath = "bin/" + string(CURRENT_PLAT) + "-" + string(CURRENT_CONF) + "/VoltLine Engine/projects.json";
+                jsonText;
+
+                if (fileExists("projects.json")) {
+                    jsonText = getFileContents("projects.json");
+                }
+                else {
+                    jsonText = getFileContents(hubSettingsPath.c_str());
+                }
+
+                try {
+                    j = json::parse(jsonText);
+                }
+                catch (const std::exception& e) {
+                    j = json();
+                }
+
+                j["projects"][projectName] = {
+                    {"project_file", std::string(projectLocation) + "\\" + std::string(projectName) + ".voltproj"}
+                };
+
+                SaveProjects(j);
+            }
             ImGui::PopFont();
         }
     }
@@ -490,7 +598,7 @@ namespace Window {
             ShowMainPanel(currentScreen);
         }
         else {
-            spdlog::error(std::format("{} is not a valid/implemented screen!", currentScreen).c_str());
+            cf_Sink::logger->error(std::format("{} is not a valid/implemented screen!", currentScreen).c_str());
             throw std::runtime_error("Invalid Screen");
         }
     }
@@ -652,7 +760,7 @@ namespace Window {
                     // much later
                 }
                 else {
-                    spdlog::error(std::format("Invalid Plugin Type: {}. Acceptables types include: core (core, Core, or CORE) and external (external, External or EXTERNAL)", pluginType).c_str());
+                    cf_Sink::logger->error(std::format("Invalid Plugin Type: {}. Acceptables types include: core (core, Core, or CORE) and external (external, External or EXTERNAL)", pluginType).c_str());
                     throw std::runtime_error("Invalid Plugin Type");
                 }
 
@@ -711,7 +819,7 @@ namespace Window {
             {
                 if (command1 == "error")
                 {
-                    spdlog::error("Unsupported OS");
+                    cf_Sink::logger->error("Unsupported OS");
                     std::this_thread::sleep_for(std::chrono::seconds(1));
                     exit(0);
                 }
@@ -745,6 +853,21 @@ namespace Window {
         }
         catch (const std::exception& e) {
             ImGui::Text("Failed to save settings.");
+        }
+    }
+
+    void Window::SaveProjects(const json& j)
+    {
+        string projectsJSONPath = "bin/" + string(CURRENT_PLAT) + "-" + string(CURRENT_CONF) + "/VoltLine Engine/projects.json";
+
+        try {
+            if (fileExists("projects.json"))
+                saveFileContents(j.dump(4).c_str(), "projects.json");
+            else
+                saveFileContents(j.dump(4).c_str(), projectsJSONPath.c_str());
+        }
+        catch (const std::exception& e) {
+            ImGui::Text("Failed to save projects.");
         }
     }
 }

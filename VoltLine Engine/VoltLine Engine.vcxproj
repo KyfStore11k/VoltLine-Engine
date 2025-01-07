@@ -11,6 +11,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\Core\Managers\DirectoryManager\DirectoryManager.h" />
     <ClInclude Include="src\Core\Managers\EngineManager\EngineManager.h" />
     <ClInclude Include="src\Core\Managers\ItemManager\ItemManager.h" />
     <ClInclude Include="src\Core\Managers\KeyBindingManager\KeyBindingManager.h" />

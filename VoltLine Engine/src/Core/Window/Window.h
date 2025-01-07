@@ -14,9 +14,9 @@ enum class Action {
 };
 
 struct KeyCombination {
-	int key;        // GLFW_KEY_*
-	int modifier;   // GLFW_MOD_*
-	Action action;  // Corresponding action
+	int key;
+	int modifier;
+	Action action;
 };
 
 namespace Window {
@@ -29,6 +29,7 @@ namespace Window {
 		int Init();
 		void ShowSidePanel();
 		void SaveHubSettings(const json& j);
+		void SaveProjects(const json& j);
 		void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
 		void updateKeyBinding(Action action, const std::string& newKeyCombo);
 		void ProjectButtonCallback();
@@ -63,7 +64,5 @@ namespace Window {
 
 		string currentScreen = "project";
 		string currentTemplate = "Empty";
-
-		char buffer[128] = "";
 	};
 }
